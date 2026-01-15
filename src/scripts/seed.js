@@ -5,9 +5,9 @@ import User from '../domains/auth/user.model.js';
 import Store from '../domains/auth/store.model.js';
 import Customer from '../domains/customers/customer.model.js';
 import GoldItem from '../domains/gold/gold.model.js';
-import GoldPurchase from '../domains/gold/gold_purchase.model.js';
 import Invoice from '../domains/invoices/invoice.model.js';
 import InvoiceItem from '../domains/invoices/invoice_items.model.js';
+import InvoicePayment from '../domains/invoices/invoice_payment.model.js'; // ✅ مدل جدید اضافه شد
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -20,6 +20,7 @@ const seedDatabase = async () => {
     await sequelize.authenticate();
     console.log('🌱 Connected to DB. Cleaning data...');
     
+    // ⚠️ توجه: force: true تمام داده‌های قبلی را پاک می‌کند
     await sequelize.sync({ force: true });
 
     const passwordHash = await bcrypt.hash('123456', 10);
@@ -33,6 +34,7 @@ const seedDatabase = async () => {
     const stores = [];
     const admins = [];
 
+    // 1. Create Stores & Admins
     for (let i = 0; i < storesData.length; i++) {
       const store = await Store.create(storesData[i]);
       stores.push(store);
@@ -55,16 +57,13 @@ const seedDatabase = async () => {
       console.log(`✅ Created Store: ${store.name} | Admin: ${username}`);
     }
 
-    // ادامه کد مثل قبل (بدون تغییر) برای پر کردن داده‌ها...
-    // برای خلاصه شدن اینجا تکرار نکردم، اما بقیه لاجیک پر کردن Staff و Customer را مثل فایل قبلی نگه دارید.
-    // اگر فایل کامل قبلی را دارید، فقط بخش storesData (خط ۲۶ تا ۳۲) را با کد بالا جایگزین کنید.
-    // اما چون خواستی کامل بفرستم، این ادامه کد است:
-
+    // 2. Loop through stores to create Staff, Customers, Inventory, and Sales
     for (const store of stores) {
       const storeId = store.id;
       const adminId = store.manager_id;
 
-      for (let j = 0; j < 10; j++) {
+      // A. Create Staff
+      for (let j = 0; j < 5; j++) {
         await User.create({
           username: `staff_${storeId}_${j+1}`,
           password: passwordHash,
@@ -74,6 +73,7 @@ const seedDatabase = async () => {
         });
       }
 
+      // B. Create Customers
       const storeCustomers = [];
       for (let k = 0; k < 20; k++) {
         const cust = await Customer.create({
@@ -88,6 +88,7 @@ const seedDatabase = async () => {
         storeCustomers.push(cust);
       }
 
+      // C. Create Active Inventory (In Stock)
       for (const cat of CATEGORIES) {
         for (let m = 0; m < 10; m++) {
           const karat = faker.helpers.arrayElement(KARATS);
@@ -112,15 +113,17 @@ const seedDatabase = async () => {
         }
       }
 
+      // D. Create Sales History (Invoices & Sold Items)
       for (let n = 0; n < 15; n++) {
         const randomCustomer = faker.helpers.arrayElement(storeCustomers);
-        const date = faker.date.recent({ days: 30 });
+        const date = faker.date.recent({ days: 60 }); // 60 days history
 
         const soldItems = [];
         const itemCount = faker.number.int({ min: 1, max: 3 });
         let totalAmount = 0;
         let totalWeight = 0;
 
+        // Generate items for this invoice
         for(let x=0; x<itemCount; x++) {
             const w = faker.number.float({ min: 3, max: 15, precision: 0.01 });
             const k = '21';
@@ -134,7 +137,7 @@ const seedDatabase = async () => {
                 karat: k,
                 weight: w,
                 buy_price_per_gram: 16.000,
-                barcode: `SOLD-${faker.string.numeric(8)}`,
+                barcode: `SOLD-${storeId}-${n}-${x}-${faker.string.numeric(4)}`,
                 store_id: storeId,
                 user_id: adminId,
                 added_by: adminId,
@@ -156,6 +159,7 @@ const seedDatabase = async () => {
             totalWeight += w;
         }
 
+        // 1. Create Invoice Header (Updated Structure)
         const invoice = await Invoice.create({
             invoice_number: `INV-${storeId}-${Date.now()}-${n}`,
             customer_name: randomCustomer.full_name,
@@ -163,13 +167,15 @@ const seedDatabase = async () => {
             customer_civil_id: randomCustomer.civil_id,
             total_weight: totalWeight,
             total_amount: totalAmount,
-            payment_method: faker.helpers.arrayElement(['Cash', 'K-Net', 'Link']),
-            user_id: adminId,
+            // payment_method removed -> Moved to relation
+            store_id: storeId, // ✅ Added Store ID
+            user_id: adminId,  // Staff ID
             created_by: adminId,
             createdAt: date,
             updatedAt: date
         });
 
+        // 2. Create Invoice Items
         for(const item of soldItems) {
             await InvoiceItem.create({
                 invoice_id: invoice.id,
@@ -181,10 +187,19 @@ const seedDatabase = async () => {
                 subtotal: item.total_price
             });
         }
+
+        // 3. Create Invoice Payment (New Table)
+        const method = faker.helpers.arrayElement(['Cash', 'K-Net', 'Link']);
+        await InvoicePayment.create({
+            invoice_id: invoice.id,
+            method: method,
+            amount: totalAmount, // Full payment for seed data
+            reference_number: method !== 'Cash' ? faker.string.numeric(10) : null
+        });
       }
     }
 
-    console.log('🎉 SEEDING COMPLETE!');
+    console.log('🎉 SEEDING COMPLETE! All stores populated.');
     process.exit(0);
 
   } catch (error) {

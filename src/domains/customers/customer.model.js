@@ -25,7 +25,7 @@ const Customer = sequelize.define('Customer', {
   },
   gender: {
     type: DataTypes.ENUM('M', 'F'),
-    allowNull: true
+    defaultValue: 'M'
   },
   address: {
     type: DataTypes.STRING,
@@ -36,28 +36,32 @@ const Customer = sequelize.define('Customer', {
     allowNull: true
   },
   expiry_date: {
-    type: DataTypes.STRING, 
+    type: DataTypes.STRING,
     allowNull: true
   },
   type: {
     type: DataTypes.ENUM('Regular', 'VIP', 'Wholesaler'),
     defaultValue: 'Regular'
   },
-  store_id: {
-    type: DataTypes.INTEGER,
-    allowNull: false
+  id_card_front_url: {
+    type: DataTypes.STRING,
+    allowNull: true
+  },
+  id_card_back_url: {
+    type: DataTypes.STRING,
+    allowNull: true
   },
   notes: {
     type: DataTypes.TEXT,
     allowNull: true
   },
-  id_card_image: {
-    type: DataTypes.BLOB('long'),
+  branch_id: {
+    type: DataTypes.INTEGER,
     allowNull: true
   },
-  id_card_mime_type: {
-    type: DataTypes.STRING,
-    allowNull: true
+  created_by: {
+    type: DataTypes.INTEGER,
+    allowNull: false
   }
 }, {
   tableName: 'customers',

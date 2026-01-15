@@ -1,3 +1,4 @@
+//domains/auth/user.model.js
 import { DataTypes } from 'sequelize';
 import sequelize from '../../config/database.js';
 
@@ -18,15 +19,19 @@ const User = sequelize.define('User', {
   },
   full_name: {
     type: DataTypes.STRING,
-    allowNull: true
+    allowNull: false
   },
   role: {
-    type: DataTypes.ENUM('admin', 'manager', 'staff'),
-    defaultValue: 'staff'
+    type: DataTypes.ENUM('store_owner', 'branch_manager', 'sales_man'),
+    allowNull: false
   },
-  store_id: {
+  branch_id: {
     type: DataTypes.INTEGER,
     allowNull: true
+  },
+  is_active: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: true
   }
 }, {
   tableName: 'users',

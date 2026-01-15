@@ -16,6 +16,7 @@
     "@faker-js/faker": "^10.2.0",
     "axios": "^1.13.2",
     "bcrypt": "^6.0.0",
+    "cloudinary": "^2.8.0",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
@@ -27,9 +28,11 @@
     "multer": "^2.0.2",
     "openai": "^6.16.0",
     "pdf-creator-node": "^2.3.5",
-    "pg": "^8.16.3",
+    "pg": "^8.17.0",
     "pg-hstore": "^2.3.4",
+    "puppeteer": "^24.35.0",
     "sequelize": "^6.37.7",
+    "sharp": "^0.34.5",
     "tesseract.js": "^7.0.0"
   }
 }
