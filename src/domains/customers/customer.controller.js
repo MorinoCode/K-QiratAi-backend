@@ -11,27 +11,36 @@ const openai = new OpenAI({
 
 export const createCustomer = async (req, res) => {
   try {
+    const schema = req.tenant.db_schema;
+    const tenantId = req.tenant.id;
+
     const { 
         full_name, phone, civil_id, nationality, 
         address, notes, branch_id, gender, birth_date, expiry_date, type 
     } = req.body;
 
-    const existingCustomer = await Customer.findOne({ where: { civil_id } });
+    const existingCustomer = await Customer.schema(schema).findOne({ where: { civil_id } });
     if (existingCustomer && civil_id) {
       return res.status(400).json({ message: 'Customer with this Civil ID already exists.' });
     }
 
     let id_card_front_url = null;
     let id_card_back_url = null;
+    
+    const storageFolder = `${tenantId}_customers`;
 
     if (req.files && req.files.front_image) {
-      id_card_front_url = await saveImage(req.files.front_image[0], 'customers', full_name || 'unknown');
+      id_card_front_url = await saveImage(req.files.front_image[0], 'customers', storageFolder);
     }
     if (req.files && req.files.back_image) {
-      id_card_back_url = await saveImage(req.files.back_image[0], 'customers', full_name || 'unknown');
+      id_card_back_url = await saveImage(req.files.back_image[0], 'customers', storageFolder);
     }
 
-    const newCustomer = await Customer.create({
+    const finalBranchId = (req.user.role === 'store_owner' && branch_id) 
+        ? branch_id 
+        : req.user.branch_id;
+
+    const newCustomer = await Customer.schema(schema).create({
       full_name,
       phone,
       civil_id,
@@ -44,7 +53,7 @@ export const createCustomer = async (req, res) => {
       notes,
       id_card_front_url,
       id_card_back_url,
-      branch_id: branch_id || req.user.branch_id,
+      branch_id: finalBranchId,
       created_by: req.user.id
     });
 
@@ -62,10 +71,13 @@ export const createCustomer = async (req, res) => {
 
 export const getCustomers = async (req, res) => {
   try {
+    const schema = req.tenant.db_schema;
     const { search, branch_id } = req.query;
     const whereClause = {};
 
-    if (branch_id) {
+    if (req.user.role !== 'store_owner') {
+        whereClause.branch_id = req.user.branch_id;
+    } else if (branch_id) {
         whereClause.branch_id = branch_id;
     }
 
@@ -77,7 +89,7 @@ export const getCustomers = async (req, res) => {
       ];
     }
 
-    const customers = await Customer.findAll({
+    const customers = await Customer.schema(schema).findAll({
       where: whereClause,
       order: [['createdAt', 'DESC']],
       limit: 100
@@ -94,12 +106,18 @@ export const getCustomers = async (req, res) => {
 
 export const getCustomerById = async (req, res) => {
   try {
+    const schema = req.tenant.db_schema;
     const { id } = req.params;
-    const customer = await Customer.findByPk(id);
+    
+    const customer = await Customer.schema(schema).findByPk(id);
 
     if (!customer) return res.status(404).json({ message: "Customer not found" });
 
-    const history = await Invoice.findAll({
+    if (req.user.role !== 'store_owner' && customer.branch_id !== req.user.branch_id) {
+        return res.status(403).json({ message: "Access denied." });
+    }
+
+    const history = await Invoice.schema(schema).findAll({
       where: { customer_id: id },
       include: ['items'],
       order: [['createdAt', 'DESC']]
@@ -127,21 +145,29 @@ export const getCustomerById = async (req, res) => {
 
 export const updateCustomer = async (req, res) => {
   try {
+    const schema = req.tenant.db_schema;
+    const tenantId = req.tenant.id;
     const { id } = req.params;
-    const customer = await Customer.findByPk(id);
+    
+    const customer = await Customer.schema(schema).findByPk(id);
     
     if(!customer) return res.status(404).json({message: "Customer not found"});
 
+    if (req.user.role !== 'store_owner' && customer.branch_id !== req.user.branch_id) {
+        return res.status(403).json({ message: "Access denied." });
+    }
+
     const updateData = { ...req.body };
+    const storageFolder = `${tenantId}_customers`;
     
     if (req.files && req.files.front_image) {
       if (customer.id_card_front_url) await deleteImage(customer.id_card_front_url);
-      updateData.id_card_front_url = await saveImage(req.files.front_image[0], 'customers', updateData.full_name || customer.full_name);
+      updateData.id_card_front_url = await saveImage(req.files.front_image[0], 'customers', storageFolder);
     }
     
     if (req.files && req.files.back_image) {
       if (customer.id_card_back_url) await deleteImage(customer.id_card_back_url);
-      updateData.id_card_back_url = await saveImage(req.files.back_image[0], 'customers', updateData.full_name || customer.full_name);
+      updateData.id_card_back_url = await saveImage(req.files.back_image[0], 'customers', storageFolder);
     }
 
     await customer.update(updateData);
@@ -153,12 +179,18 @@ export const updateCustomer = async (req, res) => {
 
 export const deleteCustomer = async (req, res) => {
   try {
+    const schema = req.tenant.db_schema;
     const { id } = req.params;
-    const customer = await Customer.findByPk(id);
+    
+    const customer = await Customer.schema(schema).findByPk(id);
     
     if (!customer) return res.status(404).json({ message: "Customer not found" });
 
-    const hasInvoices = await Invoice.findOne({ where: { customer_id: id } });
+    if (req.user.role !== 'store_owner' && customer.branch_id !== req.user.branch_id) {
+        return res.status(403).json({ message: "Access denied." });
+    }
+
+    const hasInvoices = await Invoice.schema(schema).findOne({ where: { customer_id: id } });
     if (hasInvoices) {
       return res.status(400).json({ message: "Cannot delete customer with purchase history." });
     }
@@ -229,8 +261,10 @@ export const scanIDCard = async (req, res) => {
 
 export const getCustomerHistory = async (req, res) => {
   try {
+    const schema = req.tenant.db_schema;
     const { id } = req.params;
-    const history = await Invoice.findAll({
+    
+    const history = await Invoice.schema(schema).findAll({
       where: { customer_id: id },
       include: ['items'],
       order: [['createdAt', 'DESC']]

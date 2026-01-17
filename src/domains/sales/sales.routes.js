@@ -1,4 +1,3 @@
-//domains/sales/sales.routes.js
 import express from 'express';
 import * as salesController from './sales.controller.js';
 import { resolveTenant } from '../../middlewares/tenant.middleware.js';
@@ -10,7 +9,10 @@ router.use(resolveTenant);
 router.use(protect);
 
 router.post('/create', salesController.createSale);
-router.get('/', salesController.getInvoices);
+
+// ✅ Moved above /:id to prevent routing conflict
+router.get('/invoices', salesController.getInvoices);
+
 router.get('/:id', salesController.getInvoiceById);
 
 export default router;

@@ -19,7 +19,7 @@ const InvoiceItem = sequelize.define('InvoiceItem', {
     type: DataTypes.STRING,
     allowNull: false
   },
-  item_name_ar: { // ✅ ذخیره نام عربی در فاکتور
+  item_name_ar: {
     type: DataTypes.STRING,
     allowNull: true
   },
@@ -30,6 +30,11 @@ const InvoiceItem = sequelize.define('InvoiceItem', {
   weight: {
     type: DataTypes.DECIMAL(10, 3),
     allowNull: false
+  },
+  buy_price_snapshot: {
+    type: DataTypes.DECIMAL(15, 3),
+    allowNull: false,
+    defaultValue: 0
   },
   sell_price_per_gram: {
     type: DataTypes.DECIMAL(15, 3),

@@ -9,7 +9,6 @@ import axios from 'axios';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// --- Image Processing (Base64) ---
 const getImageAsBase64 = async (url) => {
     if (!url) return null;
     try {
@@ -19,10 +18,8 @@ const getImageAsBase64 = async (url) => {
             const contentType = response.headers['content-type'] || 'image/webp';
             return `data:${contentType};base64,${buffer.toString('base64')}`;
         }
-        
         const cleanPath = url.startsWith('/') ? url.slice(1) : url;
         const fullPath = path.join(process.cwd(), 'public', cleanPath);
-        
         if (fs.existsSync(fullPath)) {
             const bitmap = fs.readFileSync(fullPath);
             const ext = path.extname(fullPath).toLowerCase().substring(1);
@@ -31,31 +28,23 @@ const getImageAsBase64 = async (url) => {
         }
         return null;
     } catch (e) {
-        console.error(`❌ Failed to download image: ${url}`, e.message);
         return null;
     }
 };
 
-// --- PDF Generator ---
 export const generateInvoicePDF = async (invoice, items, customer, user, branchName, storeSettings = {}) => {
     let browser = null;
     try {
-        console.log("--- START PDF GENERATION ---");
-        
-        // تنظیمات پیش‌فرض فروشگاه (اگر پاس داده نشود)
         const storeName = storeSettings.name || "GOLD STORE";
         const storePhone = storeSettings.phone || "";
-        const storeLogo = storeSettings.logo || null; // می‌توانید لوگوی فروشگاه را هم پاس بدهید
 
         const idFrontBase64 = customer.id_card_front_url ? await getImageAsBase64(customer.id_card_front_url) : null;
         const idBackBase64 = customer.id_card_back_url ? await getImageAsBase64(customer.id_card_back_url) : null;
-        const logoBase64 = storeLogo ? await getImageAsBase64(storeLogo) : null;
-
-        const paymentMethods = invoice.payments && invoice.payments.length > 0 
+        
+        const paymentMethods = Array.isArray(invoice.payments) && invoice.payments.length > 0 
             ? invoice.payments.map(p => `${p.method}: ${parseFloat(p.amount).toFixed(3)}`).join(', ') 
             : 'Cash';
 
-        // ساخت ردیف‌های جدول
         const itemsHtml = items.map((i, idx) => `
             <tr>
                 <td style="text-align:center">${idx + 1}</td>
@@ -78,156 +67,40 @@ export const generateInvoicePDF = async (invoice, items, customer, user, branchN
             <meta charset="UTF-8">
             <style>
                 @page { size: A4; margin: 0; }
-                body { 
-                    font-family: 'Times New Roman', serif; 
-                    margin: 0; padding: 0; 
-                    background: #fff;
-                    color: #000;
-                    -webkit-print-color-adjust: exact; 
-                }
-                
-                /* کادر دور صفحه (Gold Frame) */
-                .page-frame {
-                    border: 3px double #D4AF37; /* رنگ طلایی */
-                    margin: 10mm;
-                    height: calc(297mm - 20mm);
-                    position: relative;
-                    padding: 20px;
-                    box-sizing: border-box;
-                }
-
-                /* هدر */
-                .header {
-                    display: flex;
-                    justify-content: space-between;
-                    align-items: center;
-                    border-bottom: 2px solid #D4AF37;
-                    padding-bottom: 15px;
-                    margin-bottom: 20px;
-                }
-                .store-info h1 {
-                    margin: 0;
-                    color: #D4AF37;
-                    text-transform: uppercase;
-                    font-size: 28px;
-                    letter-spacing: 2px;
-                }
+                body { font-family: 'Times New Roman', serif; margin: 0; padding: 0; background: #fff; color: #000; -webkit-print-color-adjust: exact; }
+                .page-frame { border: 3px double #D4AF37; margin: 10mm; min-height: calc(297mm - 20mm); position: relative; padding: 20px; box-sizing: border-box; }
+                .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #D4AF37; padding-bottom: 15px; margin-bottom: 20px; }
+                .store-info h1 { margin: 0; color: #D4AF37; text-transform: uppercase; font-size: 28px; letter-spacing: 2px; }
                 .store-info p { margin: 2px 0; font-size: 12px; color: #555; }
-                .invoice-title {
-                    text-align: right;
-                }
-                .invoice-title h2 {
-                    margin: 0;
-                    font-size: 24px;
-                    color: #000;
-                }
+                .invoice-title { text-align: right; }
+                .invoice-title h2 { margin: 0; font-size: 24px; color: #000; }
                 .invoice-title span { font-size: 14px; color: #777; display:block; }
-
-                /* اطلاعات مشتری و فاکتور */
-                .info-grid {
-                    display: flex;
-                    justify-content: space-between;
-                    margin-bottom: 25px;
-                    font-size: 13px;
-                }
-                .box {
-                    width: 48%;
-                    border: 1px solid #ddd;
-                    padding: 10px;
-                    border-radius: 4px;
-                    background: #fdfdfd;
-                }
-                .box-title {
-                    font-weight: bold;
-                    color: #D4AF37;
-                    border-bottom: 1px solid #eee;
-                    padding-bottom: 5px;
-                    margin-bottom: 8px;
-                    text-transform: uppercase;
-                    font-size: 11px;
-                }
+                .info-grid { display: flex; justify-content: space-between; margin-bottom: 25px; font-size: 13px; }
+                .box { width: 48%; border: 1px solid #ddd; padding: 10px; border-radius: 4px; background: #fdfdfd; }
+                .box-title { font-weight: bold; color: #D4AF37; border-bottom: 1px solid #eee; padding-bottom: 5px; margin-bottom: 8px; text-transform: uppercase; font-size: 11px; }
                 .row { display: flex; justify-content: space-between; margin-bottom: 4px; }
                 .label { font-weight: bold; color: #444; }
-
-                /* جدول آیتم‌ها */
                 table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 12px; }
-                th { 
-                    background-color: #D4AF37; 
-                    color: white; 
-                    padding: 8px; 
-                    text-transform: uppercase; 
-                    font-size: 11px;
-                    border: 1px solid #b8952b;
-                }
+                th { background-color: #D4AF37; color: white; padding: 8px; text-transform: uppercase; font-size: 11px; border: 1px solid #b8952b; }
                 td { border: 1px solid #ddd; padding: 8px; }
                 tr:nth-child(even) { background-color: #f9f9f9; }
-
-                /* بخش جمع کل */
-                .totals-section {
-                    display: flex;
-                    justify-content: flex-end;
-                }
+                .totals-section { display: flex; justify-content: flex-end; }
                 .totals-table { width: 40%; border-collapse: collapse; }
                 .totals-table td { padding: 8px; border: 1px solid #eee; }
                 .totals-table .t-label { font-weight: bold; background: #fdfdfd; }
                 .totals-table .t-value { text-align: right; }
-                .grand-total { 
-                    background: #D4AF37 !important; 
-                    color: #fff; 
-                    font-weight: bold; 
-                    font-size: 14px;
-                }
-
-                /* قوانین و امضا */
-                .terms {
-                    margin-top: 30px;
-                    font-size: 10px;
-                    color: #666;
-                    text-align: justify;
-                    border-top: 1px solid #eee;
-                    padding-top: 10px;
-                }
-                .signatures {
-                    margin-top: 40px;
-                    display: flex;
-                    justify-content: space-between;
-                    text-align: center;
-                    font-size: 12px;
-                    font-weight: bold;
-                }
-                .sig-line {
-                    width: 200px;
-                    border-top: 1px solid #000;
-                    padding-top: 5px;
-                }
-
-                /* تصاویر کارت ملی */
-                .id-cards {
-                    margin-top: 20px;
-                    text-align: center;
-                    border: 1px dashed #ccc;
-                    padding: 10px;
-                    background: #fafafa;
-                }
+                .grand-total { background: #D4AF37 !important; color: #fff; font-weight: bold; font-size: 14px; }
+                .terms { margin-top: 30px; font-size: 10px; color: #666; text-align: justify; border-top: 1px solid #eee; padding-top: 10px; }
+                .signatures { margin-top: 40px; display: flex; justify-content: space-between; text-align: center; font-size: 12px; font-weight: bold; }
+                .sig-line { width: 200px; border-top: 1px solid #000; padding-top: 5px; }
+                .id-cards { margin-top: 20px; text-align: center; border: 1px dashed #ccc; padding: 10px; background: #fafafa; }
                 .id-cards img { height: 100px; margin: 0 10px; border: 1px solid #ddd; }
-                
-                /* واترمارک پس زمینه */
-                .watermark {
-                    position: absolute;
-                    top: 50%; left: 50%;
-                    transform: translate(-50%, -50%) rotate(-45deg);
-                    font-size: 80px;
-                    color: rgba(212, 175, 55, 0.05); /* Very light gold */
-                    z-index: -1;
-                    font-weight: bold;
-                    white-space: nowrap;
-                }
+                .watermark { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(-45deg); font-size: 80px; color: rgba(212, 175, 55, 0.05); z-index: -1; font-weight: bold; white-space: nowrap; }
             </style>
         </head>
         <body>
             <div class="page-frame">
                 <div class="watermark">${storeName}</div>
-
                 <div class="header">
                     <div class="store-info">
                         <h1>${storeName}</h1>
@@ -239,7 +112,6 @@ export const generateInvoicePDF = async (invoice, items, customer, user, branchN
                         <span>#${invoice.invoice_number}</span>
                     </div>
                 </div>
-
                 <div class="info-grid">
                     <div class="box">
                         <div class="box-title">Customer Details / بيانات العميل</div>
@@ -256,7 +128,6 @@ export const generateInvoicePDF = async (invoice, items, customer, user, branchN
                         <div class="row"><span class="label">Payment:</span> <span>${paymentMethods}</span></div>
                     </div>
                 </div>
-
                 <table>
                     <thead>
                         <tr>
@@ -269,11 +140,8 @@ export const generateInvoicePDF = async (invoice, items, customer, user, branchN
                             <th width="15%">Total / الإجمالي</th>
                         </tr>
                     </thead>
-                    <tbody>
-                        ${itemsHtml}
-                    </tbody>
+                    <tbody>${itemsHtml}</tbody>
                 </table>
-
                 <div class="totals-section">
                     <table class="totals-table">
                         <tr>
@@ -290,7 +158,6 @@ export const generateInvoicePDF = async (invoice, items, customer, user, branchN
                         </tr>
                     </table>
                 </div>
-
                 <div class="terms">
                     <strong>Terms & Conditions / الشروط والأحكام:</strong><br/>
                     1. Goods sold are gold of standard purity (18K, 21K, 22K) as specified.<br/>
@@ -304,16 +171,10 @@ export const generateInvoicePDF = async (invoice, items, customer, user, branchN
                     ٤. الفاتورة الأصلية ضرورية لأي استبدال أو استرجاع.
                     </div>
                 </div>
-
                 <div class="signatures">
-                    <div class="sig-line">
-                        Seller Signature<br/>توقيع البائع
-                    </div>
-                    <div class="sig-line">
-                        Customer Signature<br/>توقيع العميل
-                    </div>
+                    <div class="sig-line">Seller Signature<br/>توقيع البائع</div>
+                    <div class="sig-line">Customer Signature<br/>توقيع العميل</div>
                 </div>
-
                 ${(idFrontBase64 || idBackBase64) ? `
                 <div class="id-cards">
                     <div style="font-size:10px; font-weight:bold; margin-bottom:5px;">Attached Identification</div>
@@ -321,7 +182,6 @@ export const generateInvoicePDF = async (invoice, items, customer, user, branchN
                     ${idBackBase64 ? `<img src="${idBackBase64}" />` : ''}
                 </div>
                 ` : ''}
-
             </div>
         </body>
         </html>`;
@@ -331,28 +191,23 @@ export const generateInvoicePDF = async (invoice, items, customer, user, branchN
             args: ['--no-sandbox', '--disable-setuid-sandbox']
         });
         const page = await browser.newPage();
-        
-        // تنظیمات Viewport برای A4
-        await page.setViewport({ width: 794, height: 1123 }); // A4 size in pixels at 96dpi
-        
+        await page.setViewport({ width: 794, height: 1123 });
         await page.setContent(htmlContent, { waitUntil: 'networkidle0' });
 
-        const safeBranchName = branchName ? branchName.replace(/[^a-zA-Z0-9]/g, '-') : 'Main';
-        const fileName = `INV-${safeBranchName}-${invoice.invoice_number}.pdf`;
-        const uploadDir = path.join(process.cwd(), 'public', 'uploads', 'invoices');
+        const safeBranch = (branchName || 'Main').replace(/[^a-zA-Z0-9]/g, '-');
+        const safeCustomer = (customer.full_name || 'Guest').replace(/[^a-zA-Z0-9]/g, '_');
+        const fileName = `INV-${safeBranch}-${safeCustomer}-${invoice.invoice_number}.pdf`;
         
+        const uploadDir = path.join(process.cwd(), 'public', 'uploads', 'invoices');
         if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
         
         const filePath = path.join(uploadDir, fileName);
-        
         await page.pdf({
             path: filePath,
             format: 'A4',
             printBackground: true,
-            margin: { top: '0', bottom: '0', left: '0', right: '0' } // مارجین‌ها را در CSS کنترل کردیم
+            margin: { top: '0', bottom: '0', left: '0', right: '0' }
         });
-
-        console.log("✅ PDF Generated Locally:", filePath);
 
         let cloudUrl = null;
         if (process.env.USE_CLOUD_STORAGE === 'true') {
@@ -365,26 +220,20 @@ export const generateInvoicePDF = async (invoice, items, customer, user, branchN
                     public_id: fileName.replace('.pdf', '')
                 });
                 cloudUrl = result.secure_url;
-            } catch (err) {
-                console.error("Cloudinary Error:", err.message);
-            }
+            } catch (err) {}
         }
 
         return { localPath: `/uploads/invoices/${fileName}`, cloudUrl };
 
     } catch (error) {
-        console.error("❌ PDF Generation Error:", error);
         return null;
     } finally {
         if (browser) await browser.close();
     }
 };
 
-// --- Excel Generator (UpdateSalesExcel) ---
-// (کد اکسل قبلی شما عالی است و نیازی به تغییر ندارد، همان را اینجا نگه دارید)
 export const updateSalesExcel = async (invoice, items, customer, user, branchName) => {
     try {
-        console.log("--- START EXCEL UPDATE ---");
         const reportDir = path.join(process.cwd(), 'public', 'reports');
         if (!fs.existsSync(reportDir)) fs.mkdirSync(reportDir, { recursive: true });
 
@@ -418,7 +267,7 @@ export const updateSalesExcel = async (invoice, items, customer, user, branchNam
             { header: 'Payment Method', key: 'payment', width: 25 },
         ];
 
-        const paymentMethods = invoice.payments?.length
+        const paymentMethods = invoice.payments && invoice.payments.length
             ? invoice.payments.map(p => `${p.method}:${parseFloat(p.amount).toFixed(3)}`).join(' | ')
             : 'Cash';
 
@@ -439,9 +288,7 @@ export const updateSalesExcel = async (invoice, items, customer, user, branchNam
         });
 
         await workbook.xlsx.writeFile(filePath);
-        console.log(`✅ Excel Updated: sales_${safeBranch}.xlsx`);
-
     } catch (error) {
-        console.error("❌ Excel Update Failed:", error.message);
+        console.error("Excel Error", error);
     }
 };

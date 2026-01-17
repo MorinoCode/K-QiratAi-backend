@@ -1,5 +1,5 @@
 import express from 'express';
-import http from 'http'; // Import http module
+import http from 'http';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import path from 'path';
@@ -8,8 +8,8 @@ import sequelize from './config/database.js';
 
 import { resolveTenant } from './middlewares/tenant.middleware.js';
 import { protect } from './middlewares/auth.middleware.js';
-import { initSocket } from './config/socket.js'; // Import Socket Init
-import { startGoldScheduler, getLastPrice } from './utils/gold.service.js'; // Import Gold Service
+import { initSocket } from './config/socket.js';
+import { startGoldScheduler, getLastPrice } from './utils/gold.service.js';
 
 import platformRoutes from './domains/platform/platform.routes.js';
 import authRoutes from './domains/auth/auth.routes.js';
@@ -19,7 +19,7 @@ import customerRoutes from './domains/customers/customer.routes.js';
 import salesRoutes from './domains/sales/sales.routes.js';
 import oldGoldRoutes from './domains/old-gold/old-gold.routes.js';
 import managementRoutes from './domains/management/management.routes.js';
-import dashboardRoutes from './domains/dashboard/dashboard.routes.js';
+import dashboardRoutes from './domains/dashboard/dashboard.routes.js'; // Ensure this is imported
 
 import Tenant from './domains/platform/tenant.model.js';
 import WhatsappConfig from './domains/platform/whatsapp.config.model.js';
@@ -36,9 +36,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const httpServer = http.createServer(app); // Wrap express app in HTTP server
+const httpServer = http.createServer(app);
 
-// Initialize Socket.io
 initSocket(httpServer);
 
 app.use(cors({
@@ -50,6 +49,11 @@ app.use(cors({
 
 app.use(express.json());
 app.use(cookieParser());
+
+// ✅ FIX: Static file serving. 
+// Assuming 'public' is at the root level, adjacent to 'src'.
+// If you run 'node src/server.js', __dirname is '.../src'.
+// So we go up one level '../public/uploads'.
 app.use('/uploads', express.static(path.join(__dirname, '../public/uploads')));
 
 // Associations
@@ -88,6 +92,8 @@ app.use('/api/customers', resolveTenant, protect, customerRoutes);
 app.use('/api/sales', resolveTenant, protect, salesRoutes);
 app.use('/api/old-gold', resolveTenant, protect, oldGoldRoutes);
 app.use('/api/manage', resolveTenant, protect, managementRoutes);
+
+// ✅ FIX: Register Dashboard Routes
 app.use('/api/dashboard', resolveTenant, protect, dashboardRoutes);
 
 // Public route to get initial price (Rest API fallback)
@@ -105,11 +111,30 @@ const startServer = async () => {
     await WhatsappConfig.sync({ alter: true });
     console.log('✅ Platform Tables Synced (Public Schema).');
 
-    // Start Gold Price Scheduler
+    const tenants = await Tenant.findAll();
+    console.log(`🔄 Syncing ${tenants.length} tenants...`);
+
+    for (const tenant of tenants) {
+        const schema = tenant.db_schema;
+        console.log(`   > Syncing schema: ${schema}`);
+        
+        await sequelize.query(`CREATE SCHEMA IF NOT EXISTS "${schema}";`);
+        await sequelize.query(`SET search_path TO "${schema}", public`);
+        
+        await Branch.schema(schema).sync({ alter: true });
+        await User.schema(schema).sync({ alter: true });
+        await Customer.schema(schema).sync({ alter: true });
+        await InventoryItem.schema(schema).sync({ alter: true });
+        await Invoice.schema(schema).sync({ alter: true });
+        await InvoiceItem.schema(schema).sync({ alter: true });
+        await InvoicePayment.schema(schema).sync({ alter: true });
+        await OldGold.schema(schema).sync({ alter: true });
+    }
+    console.log('✅ All Tenant Tables Synced.');
+
     startGoldScheduler();
 
     const PORT = process.env.PORT || 5000;
-    // Important: Listen on httpServer, not app
     httpServer.listen(PORT, () => {
       console.log(`🚀 Server running on port ${PORT}`);
     });

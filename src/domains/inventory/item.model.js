@@ -7,10 +7,15 @@ const InventoryItem = sequelize.define('InventoryItem', {
     primaryKey: true,
     autoIncrement: true
   },
-  metal_type: {
-    type: DataTypes.ENUM('Gold', 'Silver', 'Platinum', 'Diamond', 'Gemstone'),
-    defaultValue: 'Gold',
-    allowNull: false
+  rfid_tag: {
+    type: DataTypes.STRING,
+    unique: true,
+    allowNull: true
+  },
+  barcode: {
+    type: DataTypes.STRING,
+    unique: true,
+    allowNull: true
   },
   item_name: {
     type: DataTypes.STRING,
@@ -24,10 +29,50 @@ const InventoryItem = sequelize.define('InventoryItem', {
     type: DataTypes.STRING,
     allowNull: false
   },
-  country_of_origin: {
+  karat: {
     type: DataTypes.STRING,
-    allowNull: true,
-    defaultValue: 'Kuwait'
+    allowNull: false,
+    validate: {
+      isIn: [['18', '21', '22', '24']]
+    }
+  },
+  weight: {
+    type: DataTypes.DECIMAL(10, 3),
+    allowNull: false
+  },
+  quantity: {
+    type: DataTypes.INTEGER,
+    defaultValue: 1
+  },
+  min_stock_level: {
+    type: DataTypes.INTEGER,
+    defaultValue: 2,
+    allowNull: false
+  },
+  buy_price_per_gram: {
+    type: DataTypes.DECIMAL(15, 3),
+    allowNull: false
+  },
+  supplier_name: {
+    type: DataTypes.STRING,
+    allowNull: true
+  },
+  status: {
+    type: DataTypes.STRING,
+    defaultValue: 'In Stock',
+    validate: {
+      isIn: [['In Stock', 'Sold', 'Reserved', 'Melted']]
+    }
+  },
+  branch_id: {
+    type: DataTypes.INTEGER,
+    allowNull: true
+  },
+  // ✅ تغیر مهم: استفاده از آرایه برای ذخیره چند عکس
+  images: {
+    type: DataTypes.ARRAY(DataTypes.STRING),
+    defaultValue: [],
+    allowNull: true
   },
   description: {
     type: DataTypes.TEXT,
@@ -37,44 +82,17 @@ const InventoryItem = sequelize.define('InventoryItem', {
     type: DataTypes.TEXT,
     allowNull: true
   },
-  karat: {
+  country_of_origin: {
     type: DataTypes.STRING,
-    allowNull: false
-  },
-  weight: {
-    type: DataTypes.DECIMAL(10, 3),
-    allowNull: false
-  },
-  quantity: {
-    type: DataTypes.INTEGER,
-    defaultValue: 1,
-    allowNull: false
-  },
-  buy_price_per_gram: {
-    type: DataTypes.DECIMAL(15, 3),
-    allowNull: false
-  },
-  barcode: {
-    type: DataTypes.STRING,
-    unique: true,
-    allowNull: false
-  },
-  images: {
-    type: DataTypes.JSONB, 
-    defaultValue: [],
     allowNull: true
   },
-  status: {
-    type: DataTypes.ENUM('In Stock', 'Sold', 'Reserved', 'Returned'),
-    defaultValue: 'In Stock'
-  },
-  branch_id: {
-    type: DataTypes.INTEGER,
-    allowNull: true
+  metal_type: {
+    type: DataTypes.STRING,
+    defaultValue: 'Gold'
   },
   created_by: {
     type: DataTypes.INTEGER,
-    allowNull: false
+    allowNull: true
   }
 }, {
   tableName: 'inventory_items',

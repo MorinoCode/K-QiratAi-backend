@@ -1,8 +1,6 @@
-// domains/auth/auth.controller.js
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import User from './user.model.js';
-import Role from './role.model.js';
 import Branch from '../store/branch.model.js';
 
 const generateToken = (id) => {
@@ -14,8 +12,15 @@ const generateToken = (id) => {
 export const login = async (req, res) => {
   try {
     const { username, password } = req.body;
+    const schema = req.tenant.db_schema;
 
-    const user = await User.findOne({ where: { username } });
+    // ✅ FIX: Include Branch info in Login
+    const user = await User.schema(schema).findOne({ 
+        where: { username },
+        include: [
+            { model: Branch.schema(schema), as: 'branch', attributes: ['id', 'name', 'is_main'] }
+        ]
+    });
 
     if (!user) {
       return res.status(401).json({ message: 'Invalid credentials.' });
@@ -34,8 +39,8 @@ export const login = async (req, res) => {
 
     res.cookie('token', token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production', 
-      maxAge: 24 * 60 * 60 * 1000, 
+      secure: process.env.NODE_ENV === 'production',
+      maxAge: 24 * 60 * 60 * 1000,
       sameSite: 'lax'
     });
 
@@ -44,8 +49,7 @@ export const login = async (req, res) => {
     res.json({
       success: true,
       message: 'Login successful.',
-      user: userData,
-      token 
+      data: { ...userData, token }
     });
 
   } catch (error) {
@@ -56,21 +60,35 @@ export const login = async (req, res) => {
 
 export const logout = (req, res) => {
   res.clearCookie('token');
-  res.json({ message: 'Logged out successfully.' });
+  res.json({ success: true, message: 'Logged out successfully.' });
 };
 
 export const getMe = async (req, res) => {
   try {
-    const user = await User.findByPk(req.user.id, {
+    const schema = req.tenant.db_schema;
+
+    const user = await User.schema(schema).findByPk(req.user.id, {
       attributes: { exclude: ['password'] },
       include: [
-         // چون Branch در فایل app.js به User وصل شده، اینجا می‌توانیم آن را بگیریم
-         { model: Branch, as: 'branch', attributes: ['name', 'is_main'] } 
+        { 
+            model: Branch.schema(schema), 
+            as: 'branch', 
+            attributes: ['id', 'name', 'is_main'] 
+        }
       ]
     });
 
-    res.json(user);
+    if (!user) {
+        return res.status(404).json({ message: 'User not found' });
+    }
+
+    res.json({
+        success: true,
+        data: user
+    });
+
   } catch (error) {
+    console.error('GetMe Error:', error);
     res.status(500).json({ message: error.message });
   }
 };
