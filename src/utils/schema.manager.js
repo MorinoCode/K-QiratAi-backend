@@ -1,7 +1,6 @@
 import sequelize from '../config/database.js';
 import bcrypt from 'bcrypt';
 import User from '../domains/auth/user.model.js';
-import Role from '../domains/auth/role.model.js';
 import Branch from '../domains/store/branch.model.js';
 import InventoryItem from '../domains/inventory/item.model.js';
 import Customer from '../domains/customers/customer.model.js';
@@ -15,54 +14,33 @@ export const createTenantSchema = async (tenantData, adminUserData) => {
   const t = await sequelize.transaction();
 
   try {
-    // 1. ساخت Schema جدید
+    // 1. Create Schema
     await sequelize.query(`CREATE SCHEMA IF NOT EXISTS "${schemaName}"`, { transaction: t });
     
-    // 2. تغییر مسیر جستجو به Schema جدید
-    await sequelize.query(`SET search_path TO "${schemaName}"`, { transaction: t });
+    // 2. Sync Tables using .schema() method
+    await Branch.schema(schemaName).sync({ force: true, transaction: t });
+    await User.schema(schemaName).sync({ force: true, transaction: t });
+    
+    await InventoryItem.schema(schemaName).sync({ force: true, transaction: t });
+    await Customer.schema(schemaName).sync({ force: true, transaction: t });
+    await Invoice.schema(schemaName).sync({ force: true, transaction: t });
+    await InvoiceItem.schema(schemaName).sync({ force: true, transaction: t });
+    await InvoicePayment.schema(schemaName).sync({ force: true, transaction: t });
+    await OldGold.schema(schemaName).sync({ force: true, transaction: t });
 
-    // 3. همگام‌سازی جدول‌ها (حذف force: true)
-    // نکته: ترتیب مهم است. اول جدول‌هایی که کلید خارجی ندارند.
-    await Role.sync({ transaction: t }); 
-    await Branch.sync({ transaction: t });
-    await User.sync({ transaction: t }); // حالا User بدون درگیری با public ساخته می‌شود
-    await InventoryItem.sync({ transaction: t });
-    await Customer.sync({ transaction: t });
-    await Invoice.sync({ transaction: t });
-    await InvoiceItem.sync({ transaction: t });
-    await InvoicePayment.sync({ transaction: t });
-    await OldGold.sync({ transaction: t });
-
-    // 4. ایجاد داده‌های اولیه
-    const ownerRole = await Role.create({
-      name: 'Store Owner',
-      permissions: ['ALL_ACCESS'],
-      description: 'Full access to all system features'
-    }, { transaction: t });
-
-    await Role.create({
-      name: 'Branch Manager',
-      permissions: ['VIEW_DASHBOARD', 'MANAGE_INVENTORY', 'MANAGE_STAFF', 'CREATE_SALE'],
-      description: 'Manages a specific branch'
-    }, { transaction: t });
-
-    await Role.create({
-      name: 'Sales Man',
-      permissions: ['CREATE_SALE', 'VIEW_INVENTORY', 'REGISTER_CUSTOMER'],
-      description: 'Standard sales access'
-    }, { transaction: t });
-
-    const mainBranch = await Branch.create({
-      name: 'Main Branch',
+    // 3. Create Main Branch (Fix: Use store name instead of 'Main Branch')
+    const mainBranch = await Branch.schema(schemaName).create({
+      name: tenantData.name || 'Main Branch', // Dynamic Name
       location: 'Main Location',
       phone: tenantData.phone,
       is_main: true
     }, { transaction: t });
 
+    // 4. Create Owner User
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(adminUserData.password, salt);
 
-    await User.create({
+    await User.schema(schemaName).create({
       full_name: adminUserData.full_name,
       username: adminUserData.username,
       password: hashedPassword,
@@ -72,14 +50,12 @@ export const createTenantSchema = async (tenantData, adminUserData) => {
     }, { transaction: t });
 
     await t.commit();
+    console.log(`✅ Schema & Owner created for: ${tenantData.slug}`);
     return true;
 
   } catch (error) {
     await t.rollback();
     console.error('Schema Creation Error:', error);
-    throw error; // این باعث می‌شود ارور به فرانت‌اند برگردد تا بفهمید چه شده
-  } finally {
-    // برگرداندن مسیر به public برای درخواست‌های بعدی سرور
-    await sequelize.query(`SET search_path TO public`);
+    throw error; 
   }
 };

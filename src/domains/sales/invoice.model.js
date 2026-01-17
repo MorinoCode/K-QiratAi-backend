@@ -1,4 +1,3 @@
-//domains/sales/invoice.model.js
 import { DataTypes } from 'sequelize';
 import sequelize from '../../config/database.js';
 
@@ -30,11 +29,18 @@ const Invoice = sequelize.define('Invoice', {
     allowNull: false
   },
   status: {
-    type: DataTypes.ENUM('Paid', 'Void', 'Refunded'),
-    defaultValue: 'Paid'
+    type: DataTypes.STRING,
+    defaultValue: 'Paid',
+    validate: {
+      isIn: [['Paid', 'Void', 'Refunded']]
+    }
   },
   notes: {
     type: DataTypes.TEXT,
+    allowNull: true
+  },
+  pdf_path: {
+    type: DataTypes.STRING,
     allowNull: true
   },
   branch_id: {

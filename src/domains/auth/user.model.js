@@ -1,4 +1,3 @@
-//domains/auth/user.model.js
 import { DataTypes } from 'sequelize';
 import sequelize from '../../config/database.js';
 
@@ -10,8 +9,8 @@ const User = sequelize.define('User', {
   },
   username: {
     type: DataTypes.STRING,
-    allowNull: false,
-    unique: true
+    unique: true,
+    allowNull: false
   },
   password: {
     type: DataTypes.STRING,
@@ -22,8 +21,11 @@ const User = sequelize.define('User', {
     allowNull: false
   },
   role: {
-    type: DataTypes.ENUM('store_owner', 'branch_manager', 'sales_man'),
-    allowNull: false
+    type: DataTypes.STRING, // Changed from ENUM to STRING to fix Schema Sync issues
+    defaultValue: 'sales_man',
+    validate: {
+      isIn: [['store_owner', 'branch_manager', 'sales_man']]
+    }
   },
   branch_id: {
     type: DataTypes.INTEGER,

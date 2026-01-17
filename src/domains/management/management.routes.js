@@ -10,7 +10,9 @@ router.use(resolveTenant);
 router.use(protect);
 
 // --- Branch Routes ---
-router.get('/branches', restrictTo('store_owner'), manageController.getBranches);
+// ✅ FIX: اجازه دسترسی به مدیر شعبه داده شد (برای دیدن شعبه خودش)
+router.get('/branches', restrictTo('store_owner', 'branch_manager'), manageController.getBranches);
+
 router.post('/branches', restrictTo('store_owner'), manageController.createBranch);
 router.put('/branches/:id', restrictTo('store_owner'), manageController.updateBranch);
 router.delete('/branches/:id', restrictTo('store_owner'), manageController.deleteBranch);
