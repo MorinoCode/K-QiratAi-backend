@@ -1,3 +1,4 @@
+import path from 'path';
 import sequelize from '../../config/database.js';
 import Invoice from './invoice.model.js';
 import InvoiceItem from './invoice-item.model.js';
@@ -5,8 +6,9 @@ import InvoicePayment from './payment.model.js';
 import InventoryItem from '../inventory/item.model.js';
 import Customer from '../customers/customer.model.js';
 import User from '../auth/user.model.js';
-import Branch from '../store/branch.model.js';
+import WhatsappConfig from '../platform/whatsapp.config.model.js';
 import { generateInvoicePDF, updateSalesExcel } from '../../utils/invoiceGenerator.js';
+import { sendInvoicePDF } from '../../utils/whatsapp.service.js';
 
 const generateWhatsAppLink = (invoice, customer, items) => {
   if (!customer.phone) return null;
@@ -36,12 +38,12 @@ export const createSale = async (req, res) => {
       user = { full_name: 'Cashier' };
   }
 
-  let branchName = 'Main Branch';
-
+  const branchName = user.branch ? user.branch.name : 'Main Branch';
+  
   const t = await sequelize.transaction();
 
   try {
-    await sequelize.query('SET search_path TO "tenant_gold_mubarakiye"', { transaction: t });
+    await sequelize.query(`SET LOCAL search_path TO "${req.tenant.db_schema}", public`, { transaction: t });
 
     const { customer_id, items, payments, notes } = req.body;
 
@@ -60,10 +62,16 @@ export const createSale = async (req, res) => {
     const invoiceItemsData = [];
 
     for (const item of items) {
-      const inventoryItem = await InventoryItem.findByPk(item.id, { transaction: t });
+      const inventoryItem = await InventoryItem.findByPk(item.id, { 
+          transaction: t,
+          lock: t.LOCK.UPDATE 
+      });
 
       if (!inventoryItem) throw new Error(`Item with ID ${item.id} not found.`);
-      if (inventoryItem.status !== 'In Stock') throw new Error(`Item ${inventoryItem.item_name} is already sold.`);
+      
+      if (inventoryItem.status !== 'In Stock' && inventoryItem.quantity <= 0) {
+          throw new Error(`Item ${inventoryItem.item_name} is out of stock.`);
+      }
 
       const weight = parseFloat(inventoryItem.weight);
       const labor = parseFloat(item.labor_cost || 0);
@@ -95,7 +103,8 @@ export const createSale = async (req, res) => {
     }
 
     const totalPaid = payments.reduce((acc, p) => acc + parseFloat(p.amount), 0);
-    if (Math.abs(totalPaid - grandTotal) > 0.01) {
+    
+    if (Math.abs(totalPaid - grandTotal) > 0.005) {
         throw new Error(`Payment amount (${totalPaid}) does not match Total Amount (${grandTotal})`);
     }
 
@@ -128,13 +137,46 @@ export const createSale = async (req, res) => {
       }, { transaction: t });
     }
 
-    newInvoice.payments = payments;
-
-    // Await PDF & Excel Generation
-    const pdfResult = await generateInvoicePDF(newInvoice, invoiceItemsData, customer, user, branchName);
-    await updateSalesExcel(newInvoice, invoiceItemsData, customer, user, branchName);
-
     await t.commit();
+
+    newInvoice.payments = payments;
+    
+    let pdfResult = {};
+    
+    const storeSettings = {
+        name: req.tenant.name,
+        phone: req.tenant.phone
+    };
+
+    try {
+        pdfResult = await generateInvoicePDF(newInvoice, invoiceItemsData, customer, user, branchName, storeSettings);
+        await updateSalesExcel(newInvoice, invoiceItemsData, customer, user, branchName);
+    } catch (fileError) {
+        console.error("File Generation Error:", fileError);
+    }
+
+    if (pdfResult?.localPath) {
+        try {
+            const relativePath = pdfResult.localPath.startsWith('/') ? pdfResult.localPath.slice(1) : pdfResult.localPath;
+            const fullPdfPath = path.join(process.cwd(), 'public', relativePath);
+
+            const waConfig = await WhatsappConfig.findOne({ where: { tenant_slug: req.tenant.slug } });
+
+            if (waConfig && waConfig.is_enabled && waConfig.session_status === 'CONNECTED') {
+                const caption = `🧾 New Invoice: ${newInvoice.invoice_number}\n💰 Amount: ${newInvoice.total_amount} KD\n📍 Branch: ${branchName}`;
+
+                if (waConfig.owner_phone) {
+                   await sendInvoicePDF(req.tenant.slug, waConfig.owner_phone, fullPdfPath, caption);
+                }
+
+                if (waConfig.manager_phone) {
+                   await sendInvoicePDF(req.tenant.slug, waConfig.manager_phone, fullPdfPath, caption);
+                }
+            }
+        } catch (waError) {
+            console.error("WhatsApp Auto-Send Error:", waError);
+        }
+    }
 
     const whatsappLink = generateWhatsAppLink(newInvoice, customer, invoiceItemsData);
 
@@ -166,35 +208,35 @@ export const createSale = async (req, res) => {
 };
 
 export const getInvoices = async (req, res) => {
-  try {
-    const invoices = await Invoice.findAll({
-      include: [
-        { model: Customer, as: 'customer', attributes: ['full_name'] },
-        { model: User, as: 'creator', attributes: ['full_name'] }
-      ],
-      order: [['createdAt', 'DESC']],
-      limit: 50
-    });
-    res.json({ success: true, data: invoices });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-};
-
+    try {
+      const invoices = await Invoice.findAll({
+        include: [
+          { model: Customer, as: 'customer', attributes: ['full_name'] },
+          { model: User, as: 'creator', attributes: ['full_name'] }
+        ],
+        order: [['createdAt', 'DESC']],
+        limit: 50
+      });
+      res.json({ success: true, data: invoices });
+    } catch (error) {
+      res.status(500).json({ message: error.message });
+    }
+  };
+  
 export const getInvoiceById = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const invoice = await Invoice.findByPk(id, {
-      include: [
-        { model: InvoiceItem, as: 'items' },
-        { model: InvoicePayment, as: 'payments' },
-        { model: Customer, as: 'customer' },
-        { model: User, as: 'creator', attributes: ['full_name'] }
-      ]
-    });
-    if (!invoice) return res.status(404).json({ message: 'Invoice not found' });
-    res.json({ success: true, data: invoice });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
+    try {
+      const { id } = req.params;
+      const invoice = await Invoice.findByPk(id, {
+        include: [
+          { model: InvoiceItem, as: 'items' },
+          { model: InvoicePayment, as: 'payments' },
+          { model: Customer, as: 'customer' },
+          { model: User, as: 'creator', attributes: ['full_name'] }
+        ]
+      });
+      if (!invoice) return res.status(404).json({ message: 'Invoice not found' });
+      res.json({ success: true, data: invoice });
+    } catch (error) {
+      res.status(500).json({ message: error.message });
+    }
 };

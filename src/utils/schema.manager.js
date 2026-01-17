@@ -15,17 +15,14 @@ export const createTenantSchema = async (tenantData, adminUserData) => {
   const t = await sequelize.transaction();
 
   try {
-    // 1. ساخت Schema جدید
     await sequelize.query(`CREATE SCHEMA IF NOT EXISTS "${schemaName}"`, { transaction: t });
     
-    // 2. تغییر مسیر جستجو به Schema جدید
     await sequelize.query(`SET search_path TO "${schemaName}"`, { transaction: t });
 
-    // 3. همگام‌سازی جدول‌ها (حذف force: true)
-    // نکته: ترتیب مهم است. اول جدول‌هایی که کلید خارجی ندارند.
+    
     await Role.sync({ transaction: t }); 
     await Branch.sync({ transaction: t });
-    await User.sync({ transaction: t }); // حالا User بدون درگیری با public ساخته می‌شود
+    await User.sync({ transaction: t }); 
     await InventoryItem.sync({ transaction: t });
     await Customer.sync({ transaction: t });
     await Invoice.sync({ transaction: t });
@@ -33,7 +30,6 @@ export const createTenantSchema = async (tenantData, adminUserData) => {
     await InvoicePayment.sync({ transaction: t });
     await OldGold.sync({ transaction: t });
 
-    // 4. ایجاد داده‌های اولیه
     const ownerRole = await Role.create({
       name: 'Store Owner',
       permissions: ['ALL_ACCESS'],
@@ -77,9 +73,8 @@ export const createTenantSchema = async (tenantData, adminUserData) => {
   } catch (error) {
     await t.rollback();
     console.error('Schema Creation Error:', error);
-    throw error; // این باعث می‌شود ارور به فرانت‌اند برگردد تا بفهمید چه شده
+    throw error; 
   } finally {
-    // برگرداندن مسیر به public برای درخواست‌های بعدی سرور
     await sequelize.query(`SET search_path TO public`);
   }
 };
